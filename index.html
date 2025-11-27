@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Microcart — Test Index</title>
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --muted:#9aa4b2; --accent:#6ee7b7;
+      --glass: rgba(255,255,255,0.04);
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    html,body{height:100%; margin:0; background:linear-gradient(180deg,#071026 0%, #071a2b 100%); color:#e6eef6;}
+    .wrap{max-width:1100px; margin:28px auto; padding:18px;}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    .brand{display:flex;gap:12px;align-items:center}
+    .logo{
+      width:44px;height:44px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#60a5fa);
+      display:grid;place-items:center;font-weight:700;color:#042;
+    }
+    h1{font-size:18px;margin:0}
+    .actions{display:flex;gap:10px;align-items:center}
+    .search{background:var(--glass);border:1px solid rgba(255,255,255,0.03);padding:8px 12px;border-radius:8px;color:var(--muted);min-width:220px}
+    .btn{background:linear-gradient(90deg,#1f2937,#0b1220);border:1px solid rgba(255,255,255,0.03);padding:8px 12px;border-radius:8px;color:var(--accent);cursor:pointer}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:18px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);}
+    .thumb{height:140px;background:#031026;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--muted); margin-bottom:10px}
+    .title{font-weight:600;margin:0 0 6px 0}
+    .price{color:var(--accent);font-weight:700}
+    .card-footer{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+    .qty{display:flex;gap:6px;align-items:center}
+    .small{font-size:13px;color:var(--muted)}
+    /* Cart Modal */
+    .modal{position:fixed;right:18px;bottom:18px;background:var(--card);padding:12px;border-radius:12px;width:360px;box-shadow:0 12px 30px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.03)}
+    .cart-list{max-height:260px;overflow:auto;margin-top:8px}
+    .cart-row{display:flex;gap:10px;align-items:center;padding:8px;border-radius:8px;background:rgba(255,255,255,0.01);margin-bottom:8px}
+    .cart-row .thumb{height:56px;width:72px;font-size:18px}
+    .muted{color:var(--muted)}
+    .total{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-weight:700}
+    .toast{position:fixed;left:50%;transform:translateX(-50%);top:18px;background:#02121a;padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.04)}
+    /* responsive */
+    @media (max-width:520px){
+      .modal{left:12px;right:12px;width:auto}
+      .search{min-width:120px}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="logo">M</div>
+        <div>
+          <h1>Microcart — Playground</h1>
+          <div class="small muted">Inline test page — add/remove products & cart persistence</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <input id="search" class="search" placeholder="Search products (try: 'shirt' or 'shoe')" />
+        <button id="clearStorage" class="btn" title="Clear saved cart">Reset</button>
+        <button id="openCart" class="btn">Open Cart (<span id="cartCount">0</span>)</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="products" class="grid" aria-live="polite"></section>
+    </main>
+  </div>
+
+  <!-- Cart modal (hidden by default) -->
+  <div id="cartModal" class="modal" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <strong>Your Cart</strong>
+      <button id="closeCart" class="btn" style="padding:6px 9px">Close</button>
+    </div>
+
+    <div id="cartList" class="cart-list" aria-live="polite"></div>
+
+    <div class="total">
+      <div class="small muted">Total</div>
+      <div id="cartTotal">₦0</div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button id="checkout" class="btn" style="flex:1">Checkout</button>
+      <button id="empty" class="btn" style="flex:1">Empty</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" style="display:none"></div>
+
+  <script>
+    // ---------- Sample products (you can change or extend these)
+    const SAMPLE_PRODUCTS = [
+      { id: 'p1', title:'Classic Tee', price:2500, tag:'shirt' },
+      { id: 'p2', title:'Street Sneakers', price:7200, tag:'shoe' },
+      { id: 'p3', title:'Comfy Hoodie', price:5400, tag:'hoodie' },
+      { id: 'p4', title:'Sunglasses', price:1800, tag:'accessory' },
+      { id: 'p5', title:'Slim Jeans', price:3900, tag:'jeans' },
+      { id: 'p6', title:'Baseball Cap', price:900, tag:'accessory' },
+    ];
+
+    // ---------- Utilities
+    const $ = id => document.getElementById(id);
+    const currency = n => '₦' + Number(n).toLocaleString();
+
+    // ---------- App state
+    let products = SAMPLE_PRODUCTS.slice();
+    let cart = {}; // {productId: {product, qty}}
+
+    // Persist/load cart from localStorage (simple)
+    function loadCart(){
+      try{
+        const raw = localStorage.getItem('microcart_cart_v1');
+        cart = raw ? JSON.parse(raw) : {};
+      }catch(e){ cart = {}; }
+      updateCartUI();
+    }
+    function saveCart(){
+      localStorage.setItem('microcart_cart_v1', JSON.stringify(cart));
+      updateCartUI();
+    }
+
+    // ---------- Render products
+    function renderProducts(list){
+      const container = $('products');
+      container.innerHTML = '';
+      if(!list.length){
+        container.innerHTML = '<div class="small muted" style="grid-column:1/-1;padding:18px">No products found</div>';
+        return;
+      }
+      list.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'card';
+        div.innerHTML = `
+          <div class="thumb">${p.title.split(' ').map(t=>t[0]).slice(0,2).join('')}</div>
+          <h3 class="title">${p.title}</h3>
+          <div class="small muted">${p.tag}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+            <div class="price">${currency(p.price)}</div>
+            <div>
+              <button class="btn add" data-id="${p.id}">Add</button>
+            </div>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+
+      // attach add handlers
+      container.querySelectorAll('.add').forEach(btn => {
+        btn.addEventListener('click', () => {
+          addToCart(btn.dataset.id, 1);
+        });
+      });
+    }
+
+    // ---------- Cart actions
+    function addToCart(id, qty = 1){
+      const p = products.find(x => x.id === id);
+      if(!p) return showToast('Product not found');
+      if(!cart[id]) cart[id] = { product: p, qty: 0 };
+      cart[id].qty += qty;
+      if(cart[id].qty <= 0) delete cart[id];
+      saveCart();
+      showToast(`${p.title} added to cart`);
+    }
+
+    function removeFromCart(id){
+      delete cart[id];
+      saveCart();
+      showToast('Removed from cart');
+    }
+
+    function changeQty(id, delta){
+      if(!cart[id]) return;
+      cart[id].qty += delta;
+      if(cart[id].qty <= 0) delete cart[id];
+      saveCart();
+    }
+
+    function emptyCart(){
+      cart = {};
+      saveCart();
+      showToast('Cart emptied');
+    }
+
+    // ---------- UI updates
+    function updateCartUI(){
+      // count
+      const count = Object.values(cart).reduce((s,i)=>s+i.qty,0);
+      $('cartCount').textContent = count;
+      // list
+      const listEl = $('cartList');
+      listEl.innerHTML = '';
+      if(count === 0){
+        listEl.innerHTML = '<div class="small muted">Your cart is empty</div>';
+      } else {
+        Object.values(cart).forEach(item => {
+          const r = document.createElement('div');
+          r.className = 'cart-row';
+          r.innerHTML = `
+            <div class="thumb">${item.product.title.split(' ').map(t=>t[0]).slice(0,2).join('')}</div>
+            <div style="flex:1">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                  <div style="font-weight:600">${item.product.title}</div>
+                  <div class="small muted">${currency(item.product.price)} · <span class="small">x ${item.qty}</span></div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+                  <div style="display:flex;gap:6px">
+                    <button class="btn minus" data-id="${item.product.id}" style="padding:6px 8px">-</button>
+                    <button class="btn plus" data-id="${item.product.id}" style="padding:6px 8px">+</button>
+                  </div>
+                  <button class="btn remove" data-id="${item.product.id}" style="padding:6px 8px">Remove</button>
+                </div>
+              </div>
+            </div>
+          `;
+          listEl.appendChild(r);
+        });
+
+        // attach cart buttons
+        listEl.querySelectorAll('.plus').forEach(b => b.addEventListener('click', e => changeQty(e.target.dataset.id, 1)));
+        listEl.querySelectorAll('.minus').forEach(b => b.addEventListener('click', e => changeQty(e.target.dataset.id, -1)));
+        listEl.querySelectorAll('.remove').forEach(b => b.addEventListener('click', e => removeFromCart(e.target.dataset.id)));
+      }
+
+      const total = Object.values(cart).reduce((s,i)=>s + (i.product.price * i.qty), 0);
+      $('cartTotal').textContent = currency(total);
+    }
+
+    // ---------- Toast
+    let toastTimer = null;
+    function showToast(txt, ms = 1500){
+      const t = $('toast');
+      t.textContent = txt;
+      t.style.display = 'block';
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(()=> t.style.display = 'none', ms);
+    }
+
+    // ---------- Search
+    function applySearch(q){
+      const v = (q || '').trim().toLowerCase();
+      if(!v) renderProducts(products);
+      else {
+        const filtered = products.filter(p => p.title.toLowerCase().includes(v) || (p.tag||'').includes(v));
+        renderProducts(filtered);
+      }
+    }
+
+    // ---------- Simple "checkout" to simulate behaviour
+    function checkout(){
+      const total = Object.values(cart).reduce((s,i)=>s + (i.product.price * i.qty), 0);
+      if(total === 0){ showToast('Cart is empty'); return; }
+      // simulate successful checkout
+      showToast('Checkout completed — simulated');
+      // clear cart after checkout
+      cart = {};
+      saveCart();
+    }
+
+    // ---------- Wire up controls
+    document.addEventListener('DOMContentLoaded', () => {
+      renderProducts(products);
+      loadCart();
+
+      $('openCart').addEventListener('click', () => $('cartModal').style.display = 'block');
+      $('closeCart').addEventListener('click', () => $('cartModal').style.display = 'none');
+      $('empty').addEventListener('click', emptyCart);
+      $('checkout').addEventListener('click', checkout);
+      $('clearStorage').addEventListener('click', () => {
+        localStorage.removeItem('microcart_cart_v1');
+        cart = {};
+        updateCartUI();
+        showToast('Storage cleared');
+      });
+
+      // search box
+      $('search').addEventListener('input', e => applySearch(e.target.value));
+      // quick keyboard shortcut: press "c" to toggle cart (for testing)
+      document.addEventListener('keydown', e => {
+        if(e.key === 'c' || e.key === 'C'){ 
+          const m = $('cartModal');
+          m.style.display = m.style.display === 'block' ? 'none' : 'block';
+        }
+      });
+    });
+  </script>
+</body>
+</html>
